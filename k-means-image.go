@@ -196,7 +196,7 @@ func createColorTestImage(clusters []*cluster, fileName string, w int, h int) {
 	var pixelHeight int = layoutHeight * h
 	var testImage *image.RGBA = image.NewRGBA(image.Rectangle{image.Point{0, 0}, image.Point{pixelWidth, pixelHeight}})
 	//Do rows first for memory purposes (y in outer loop)
-	var r, g, b uint8 = 255, 0, 0
+	var r, g, b uint8 = 0, 0, 0
 	for x := 0; x < pixelWidth; x++ {
 		for y := 0; y < pixelHeight; y++ {
 			//If we enter a new color (or a new line)
@@ -375,15 +375,22 @@ func main() {
 	var numClusters int
 	flag.IntVar(&numClusters, "n", 10, "The number of iterations to compute")
 	flag.IntVar(&numClusters, "num-clusters", 10, "The number of iterations to compute")
+
 	var brightSteps int
 	flag.IntVar(&brightSteps, "b", 1, "The number of brightening steps to calculate and give output for. A comma separated list if more than one are to be calculated")
 	flag.IntVar(&brightSteps, "brightening-iterations", 1, "The number of brightening steps to calculate and give output for. A comma separated list if more than one are to be calculated")
+
 	var outFile string
 	flag.StringVar(&outFile, "out", "colorSample.png", "The name of the output file e.g. 'sample.png'")
 	flag.StringVar(&outFile, "output-file", "colorSample.png", "The name of the output file e.g. 'sample.png'")
+
 	var inFile string
 	flag.StringVar(&inFile, "input-file", "", "The name of the input file e.g. 'image.png'")
 	flag.StringVar(&inFile, "in", "", "The name of the input file e.g. 'image.png'")
+
+	var pixelHeight, pixelWidth int
+	flag.IntVar(&pixelWidth, "w", 150, "The width (in pixels) of the color patches in the output image")
+	flag.IntVar(&pixelHeight, "h", 75, "The height (in pixels) of the color patches in the output image")
 
 	flag.Parse()
 
@@ -398,5 +405,5 @@ func main() {
 	clusters = clusterSort(clusters)
 	//This next step wrecks 'clusters' because all of the points are pulled out of them and put into their own. It does not matter because we never plan to use clusters again.
 	brightenedClusters := brightenColors(points, clusters, brightSteps)
-	createColorTestImage(brightenedClusters, outFile, 150, 75)
+	createColorTestImage(brightenedClusters, outFile, pixelWidth, pixelHeight)
 }
