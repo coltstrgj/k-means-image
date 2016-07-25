@@ -44,53 +44,16 @@ func (c *cluster) String() string {
 	return str
 }
 
-//addPoint will take a point as an argument, and add it to the center. addPoint returns the distance that the center moved. TODO is int working?
-func (c *cluster) addPoint(p *point) int {
-	//update members
-	c.Members++
-	//add in the new values
-	c.X += (int64(p.X) - c.X) / c.Members
-	c.Y += (int64(p.Y) - c.Y) / c.Members
-	c.Z += (int64(p.Z) - c.Z) / c.Members
-	//update the points center
-	p.Center = c
-	//TODO return distance that it moved as per optimizations
-	return 0
-}
-
-//removePoint will take a point as an argument, and add it to the center. removePoint returns the distance that the center moved. TODO is int working?
-func (c *cluster) removePoint(p *point) int {
-	if c == nil {
-		return 0
-	}
-	if c.Members > 1 {
-		//update members
-		c.Members--
-		//get rid of the old value
-		c.X -= (int64(p.X) - c.X) / c.Members
-		c.Y -= (int64(p.Y) - c.Y) / c.Members
-		c.Z -= (int64(p.Z) - c.Z) / c.Members
-	} else {
-		//we cannot adjust the location for fear of going negative
-		c.Members--
-	}
-	//updat the points center
-	p.Center = nil
-	//TODO return distance that it moved as per optimizations
-	return 0
-}
-
 ////////////////////////////////////////
 //Point//
 ////////////////////////////////////////
 //point will contain the information for each point (colors) and
 type point struct {
-	X        uint32
-	Y        uint32
-	Z        uint32
-	domColor uint8
-	spread   int
-	Center   *cluster
+	X      uint32
+	Y      uint32
+	Z      uint32
+	spread int
+	Center *cluster
 }
 
 func (p *point) getDist(cluster *cluster) int64 {
@@ -110,7 +73,7 @@ func (p *point) findClosest(clusters []*cluster) *cluster {
 
 	minSquaredDist = p.getDist(closestCluster)
 
-	for _, cluster := range clusters {
+	for _, cluster := range clusters[1:] {
 		squaredDist := p.getDist(cluster)
 		if squaredDist < minSquaredDist {
 			minSquaredDist = squaredDist
@@ -118,6 +81,42 @@ func (p *point) findClosest(clusters []*cluster) *cluster {
 		}
 	}
 	return closestCluster
+}
+
+//assignCenter will take a point as an argument, and add it to the center. assignCenter returns the distance that the center moved. TODO is int working?
+func (p *point) assignCenter(c *cluster) int {
+	//update members
+	c.Members++
+	//add in the new values
+	c.X += (int64(p.X) - c.X) / c.Members
+	c.Y += (int64(p.Y) - c.Y) / c.Members
+	c.Z += (int64(p.Z) - c.Z) / c.Members
+	//update the points center
+	p.Center = c
+	//TODO return distance that it moved as per optimizations
+	return 0
+}
+
+//unassignCenter will take a point as an argument, and add it to the center. unassignCenter returns the distance that the center moved. TODO is int return working?
+func (p *point) unassignCenter() int {
+	if p.Center == nil {
+		return 0
+	}
+	if p.Center.Members > 1 {
+		//update members
+		p.Center.Members--
+		//get rid of the old value
+		p.Center.X -= (int64(p.X) - p.Center.X) / p.Center.Members
+		p.Center.Y -= (int64(p.Y) - p.Center.Y) / p.Center.Members
+		p.Center.Z -= (int64(p.Z) - p.Center.Z) / p.Center.Members
+	} else {
+		//we cannot adjust the location any lower
+		p.Center.Members--
+	}
+	//update the points p.Center
+	p.Center = nil
+	//TODO return distance that it moved as per optimizations
+	return 0
 }
 
 func getPointsFromImage(imageName string) []*point {
@@ -130,26 +129,22 @@ func getPointsFromImage(imageName string) []*point {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := m.At(x, y).RGBA()
-			var dom uint8 = 0
 			var s int = 0
+			//TODO I average the two non max colors, maybe I should try max - min instead.
 			if r > g && r > b {
-				dom = 'r'
 				s = int(r) - int((g+b)/2)
 			}
 			if g > r && g > b {
-				dom = 'g'
 				s = int(g) - int((r+b)/2)
 			}
 			if b > r && b > g {
-				dom = 'b'
 				s = int(b) - int((g+r)/2)
 			}
 			curPoint := &point{
-				X:        r,
-				Y:        g,
-				Z:        b,
-				domColor: dom,
-				spread:   s}
+				X:      r,
+				Y:      g,
+				Z:      b,
+				spread: s}
 			// A color's RGBA method returns values in the range [0, 65535].
 			// Shifting by 12 reduces this to the range [0, 15].
 			points = append(points, curPoint)
@@ -238,6 +233,7 @@ func generateFirstCenters(points []*point, num int) []*cluster {
 			Y:       int64(y),
 			Z:       int64(z),
 			Members: 1}
+		//TODO Bug here. If centerPoint.center != nil we should unassign it from the old one, but for our purposes it does not matter because we never use the old ones again. This is just makred in case we ever decide it needs fixed
 		centerPoint.Center = cluster
 		clusters = append(clusters, cluster)
 	}
@@ -287,6 +283,7 @@ func clusterSort(slice []*cluster) []*cluster {
 	return sorted
 }
 
+//iterate will assign each point to it's closest center. it returns true if nothing changed (and we have converged)
 func iterate(points []*point, clusters []*cluster) bool {
 	var stabilized bool = true
 	for _, point := range points {
@@ -296,9 +293,9 @@ func iterate(points []*point, clusters []*cluster) bool {
 			//if it has changed,
 			//we need to update the cluster TODO can we update the cluster now? I will try it and find out
 			//We could have this remove done in add, but this is more clear
-			point.Center.removePoint(point)
+			point.unassignCenter()
 			//Add the new point
-			newClosest.addPoint(point)
+			point.assignCenter(newClosest)
 			//TODO can we get stuck ever?
 			stabilized = false
 		}
@@ -312,26 +309,8 @@ func clusterPoints(points []*point, n int) []*cluster {
 	var clusters []*cluster = generateFirstCenters(points, n)
 
 	for {
-		var stabilized bool = true
-		for loc, point := range points {
-			//find out which is the closest after last iteration.
-			newClosest := point.findClosest(clusters)
-			if newClosest != point.Center {
-				//if it has changed,
-				//we need to update the cluster TODO can we update the cluster now? I will try it and find out
-				//We could have this remove done in add, but this is more clear
-				point.Center.removePoint(point)
-				//Add the new point
-				newClosest.addPoint(point)
-				//TODO can we get stuck ever?
-				stabilized = false
-			}
-			//TODO DEBUG
-			if loc%10 == 0 {
-				//print some info to see that it is working
-			}
-		}
-		if stabilized {
+		//wait until convergence
+		if iterate(points, clusters) {
 			//nothing changed in last iteration, so we have reached a stability.
 			break
 		}
@@ -345,14 +324,14 @@ func brightenColors(points []*point, clusters []*cluster, depth int) []*cluster 
 	}
 	var brightest []*cluster = make([]*cluster, 0, len(clusters))
 	for _, cluster := range clusters {
-		var cPoints = make([]*point, 0, len(points))
+		var cPoints = make([]*point, 0, cluster.Members)
 		//TODO store these somewhere so that we can skip a lot of hassle
 		for _, point := range points {
 			if point.Center == cluster {
 				cPoints = append(cPoints, point)
 			}
 		}
-		newClusters := clusterPoints(cPoints, 10)
+		newClusters := clusterPoints(cPoints, len(clusters))
 
 		//get ready to find the one with highest rgb spread
 		//var brightestCluster *cluster = nil
@@ -417,6 +396,7 @@ func main() {
 	points := getPointsFromImage(inFile)
 	var clusters []*cluster = clusterPoints(points, numClusters)
 	clusters = clusterSort(clusters)
+	//This next step wrecks 'clusters' because all of the points are pulled out of them and put into their own. It does not matter because we never plan to use clusters again.
 	brightenedClusters := brightenColors(points, clusters, brightSteps)
 	createColorTestImage(brightenedClusters, outFile, 150, 75)
 }
